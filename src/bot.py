@@ -44,6 +44,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 # 篩選設定
 # =========================================================
 
+# 🎯 24 小時成交量門檻 15,000,000 (1,500萬 USDT)
 MIN_24H_VOLUME = 15_000_000
 MAX_ALLOWABLE_FR = 0.0015
 NEAR_RESISTANCE_PCT = 0.015
@@ -187,9 +188,13 @@ def get_top_hot_symbols():
         symbol = item.get("instId")
         if not symbol or not symbol.endswith("-USDT-SWAP") or any(x in symbol for x in exclude): continue
         try:
-            volume = float(item.get("volCcy24h", 0))
-            if volume < MIN_24H_VOLUME: continue
-            volume_list.append((symbol, volume))
+            # 🎯 修復點：將「幣種成交量」乘上「最新價格」，計算出真實的 USDT 金額
+            vol_ccy = float(item.get("volCcy24h", 0))
+            last_price = float(item.get("last", 0))
+            usdt_volume = vol_ccy * last_price
+            
+            if usdt_volume < MIN_24H_VOLUME: continue
+            volume_list.append((symbol, usdt_volume))
         except Exception:
             continue
     top_volume = [x[0] for x in sorted(volume_list, key=lambda x: x[1], reverse=True)[:60]]
@@ -397,8 +402,8 @@ def scan_market():
     print(f"✅ 掃描完成 | A 級合規機會 {found} | 已發送 {sent}")
 
 if __name__ == "__main__":
-    print("🤖 肥嘟嘟左衛門已啟動（1500萬門檻＋網頁伺服器防線）")
-    send_telegram_message("🤖 肥嘟嘟左衛門已上線！準備幫老闆盯盤。")
+    print("🤖 肥嘟嘟左衛門已啟動（1500萬精準USDT門檻＋網頁伺服器防線）")
+    send_telegram_message("🤖 肥嘟嘟左衛門已上線！精準剔除低量山寨，準備幫老闆盯盤。")
     
     while True:
         try:
