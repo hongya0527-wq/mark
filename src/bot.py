@@ -44,7 +44,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 # 篩選設定
 # =========================================================
 
-# 🎯 24 小時成交量門檻 15,000,000 (1,500萬 USDT)
 MIN_24H_VOLUME = 15_000_000
 MAX_ALLOWABLE_FR = 0.0015
 NEAR_RESISTANCE_PCT = 0.015
@@ -188,7 +187,6 @@ def get_top_hot_symbols():
         symbol = item.get("instId")
         if not symbol or not symbol.endswith("-USDT-SWAP") or any(x in symbol for x in exclude): continue
         try:
-            # 🎯 修復點：將「幣種成交量」乘上「最新價格」，計算出真實的 USDT 金額
             vol_ccy = float(item.get("volCcy24h", 0))
             last_price = float(item.get("last", 0))
             usdt_volume = vol_ccy * last_price
@@ -288,30 +286,33 @@ def analyze_symbol(symbol, btc_regime):
         if status_4h in ["breakout", "weak_breakout"] and bad_breakout(c4[-1], resistance_4h):
             return None
 
-        score = 0
-        if hl_4h: score += 2
-        if hl_1d: score += 1
-        if engulf_4h: score += 2
-        if engulf_1d: score += 2
-        if status_4h == "breakout": score += 2
-        elif status_4h == "weak_breakout": score += 1
-        elif status_4h == "near": score += 1
-        if status_1d == "breakout": score += 2
-        elif status_1d == "near": score += 1
+        raw_score = 0
+        if hl_4h: raw_score += 2
+        if hl_1d: raw_score += 1
+        if engulf_4h: raw_score += 2
+        if engulf_1d: raw_score += 2
+        if status_4h == "breakout": raw_score += 2
+        elif status_4h == "weak_breakout": raw_score += 1
+        elif status_4h == "near": raw_score += 1
+        if status_1d == "breakout": raw_score += 2
+        elif status_1d == "near": raw_score += 1
 
-        if vol_ratio_val >= VOL_VERY_STRONG: score += 2
-        elif vol_ratio_val >= VOL_STRONG: score += 1
-        elif vol_ratio_val >= VOL_NORMAL: score += 1
+        if vol_ratio_val >= VOL_VERY_STRONG: raw_score += 2
+        elif vol_ratio_val >= VOL_STRONG: raw_score += 1
+        elif vol_ratio_val >= VOL_NORMAL: raw_score += 1
 
         if oi_change is not None:
-            if oi_change >= OI_VERY_STRONG: score += 2
-            elif oi_change >= OI_STRONG: score += 1
+            if oi_change >= OI_VERY_STRONG: raw_score += 2
+            elif oi_change >= OI_STRONG: raw_score += 1
 
-        if btc_regime == "bull": score += 1
-        elif btc_regime == "bear": score -= 1
+        if btc_regime == "bull": raw_score += 1
+        elif btc_regime == "bear": raw_score -= 1
 
-        if -0.01 <= funding * 100 <= 0.05: score += 1
-        if retest: score += 2
+        if -0.01 <= funding * 100 <= 0.05: raw_score += 1
+        if retest: raw_score += 2
+
+        # 🎯 將分數嚴格限制在 1 ~ 10 分以內，絕不超過 10 分
+        score = max(1, min(raw_score, 10))
 
         is_a_grade_retest = retest
         is_a_grade_breakout = (status_4h == "breakout") and (vol_ratio_val >= 1.2)
@@ -402,8 +403,8 @@ def scan_market():
     print(f"✅ 掃描完成 | A 級合規機會 {found} | 已發送 {sent}")
 
 if __name__ == "__main__":
-    print("🤖 肥嘟嘟左衛門已啟動（1500萬精準USDT門檻＋網頁伺服器防線）")
-    send_telegram_message("🤖 肥嘟嘟左衛門已上線！精準剔除低量山寨，準備幫老闆盯盤。")
+    print("🤖 肥嘟嘟左衛門已啟動")
+    send_telegram_message("🤖 肥嘟嘟左衛門已上線")
     
     while True:
         try:
