@@ -1,8 +1,30 @@
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 import time
 import requests
 from requests.adapters import HTTPAdapter
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# =========================================================
+# Render 專用：假網頁伺服器（解決免費 Web Service 的 Port 逾時問題）
+# =========================================================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Feidudu Zuoweimon Bot is running!")
+
+def run_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    server.serve_forever()
+
+# 在背景獨立執行緒中啟動假伺服器
+server_thread = threading.Thread(target=run_server, daemon=True)
+server_thread.start()
+
 
 # =========================================================
 # Telegram
@@ -22,7 +44,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 # 篩選設定
 # =========================================================
 
-# 🎯 24 小時成交量門檻調回 15,000,000 (1,500萬 USDT)，並完全剔除漲幅榜小幣
 MIN_24H_VOLUME = 15_000_000
 MAX_ALLOWABLE_FR = 0.0015
 NEAR_RESISTANCE_PCT = 0.015
@@ -171,7 +192,6 @@ def get_top_hot_symbols():
             volume_list.append((symbol, volume))
         except Exception:
             continue
-    # 只取成交量前 60 名的大型熱門幣，完全不抓漲幅榜
     top_volume = [x[0] for x in sorted(volume_list, key=lambda x: x[1], reverse=True)[:60]]
     return top_volume
 
@@ -349,7 +369,7 @@ def build_message(r):
 
 def scan_market():
     now = datetime.now(timezone(timedelta(hours=8)))
-    print(f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] ⚡ 專屬 A 級雷達高速掃描中...")
+    print(f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] ⚡ 肥嘟嘟左衛門高速掃描中...")
 
     btc_regime = check_btc_market_regime()
     symbols = get_top_hot_symbols()
@@ -372,13 +392,13 @@ def scan_market():
                 pass
 
     if found == 0:
-        send_telegram_message("🎰 報告老闆：目前市場爛得要命，半個 A 級幣都沒有！沒幣可以玩，去賭博算了 🎲")
+        send_telegram_message("🎲 肥嘟嘟左衛門回報：現在沒幣幹，直接去打 21 點！")
 
     print(f"✅ 掃描完成 | A 級合規機會 {found} | 已發送 {sent}")
 
 if __name__ == "__main__":
-    print("🤖 A 級專屬極速雷達已啟動（1500萬門檻＋台灣整點自動掃描）")
-    send_telegram_message("🤖 A 級專屬雷達已升級：成交量門檻設為 1500 萬，並改為台灣整點準時掃描！")
+    print("🤖 肥嘟嘟左衛門已啟動（1500萬門檻＋網頁伺服器防線）")
+    send_telegram_message("🤖 肥嘟嘟左衛門已上線！準備幫老闆盯盤。")
     
     while True:
         try:
