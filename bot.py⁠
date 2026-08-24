@@ -18,12 +18,11 @@ TELEGRAM_CHAT_ID = "6273931436"
 OKX_BASE_URL = "https://www.okx.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-SCAN_INTERVAL = 3600
-
 # =========================================================
 # 篩選設定
 # =========================================================
 
+# 🎯 24 小時成交量門檻調回 15,000,000 (1,500萬 USDT)，並完全剔除漲幅榜小幣
 MIN_24H_VOLUME = 15_000_000
 MAX_ALLOWABLE_FR = 0.0015
 NEAR_RESISTANCE_PCT = 0.015
@@ -162,23 +161,19 @@ def get_top_hot_symbols():
     tickers = okx_get("/api/v5/market/tickers", {"instType": "SWAP"})
     if not tickers: return []
     exclude = ["SPX", "NDX", "QQQ", "AAPL", "TSLA", "NVDA", "GOLD", "OIL"]
-    volume_list, gain_list = [], []
+    volume_list = []
     for item in tickers:
         symbol = item.get("instId")
         if not symbol or not symbol.endswith("-USDT-SWAP") or any(x in symbol for x in exclude): continue
         try:
             volume = float(item.get("volCcy24h", 0))
-            last = float(item.get("last", 0))
-            sod = float(item.get("sodUtc0", last))
             if volume < MIN_24H_VOLUME: continue
-            change = ((last - sod) / sod) * 100 if sod > 0 else 0
             volume_list.append((symbol, volume))
-            gain_list.append((symbol, change))
         except Exception:
             continue
-    top_volume = [x[0] for x in sorted(volume_list, key=lambda x: x[1], reverse=True)[:35]]
-    top_gainers = [x[0] for x in sorted(gain_list, key=lambda x: x[1], reverse=True)[:35]]
-    return list(dict.fromkeys(top_volume + top_gainers))
+    # 只取成交量前 60 名的大型熱門幣，完全不抓漲幅榜
+    top_volume = [x[0] for x in sorted(volume_list, key=lambda x: x[1], reverse=True)[:60]]
+    return top_volume
 
 def bullish_engulfing(candles):
     if len(candles) < 2: return False
@@ -293,7 +288,6 @@ def analyze_symbol(symbol, btc_regime):
         if -0.01 <= funding * 100 <= 0.05: score += 1
         if retest: score += 2
 
-        # 🎯 嚴格要求：只接受 A 級機會（回踩確認 或 帶量突破）
         is_a_grade_retest = retest
         is_a_grade_breakout = (status_4h == "breakout") and (vol_ratio_val >= 1.2)
 
@@ -377,13 +371,22 @@ def scan_market():
             except Exception:
                 pass
 
+    if found == 0:
+        send_telegram_message("🎰 報告老闆：目前市場爛得要命，半個 A 級幣都沒有！沒幣可以玩，去賭博算了 🎲")
+
     print(f"✅ 掃描完成 | A 級合規機會 {found} | 已發送 {sent}")
 
 if __name__ == "__main__":
-    print("🚀 A 級專屬極速雷達已啟動（已過濾所有 B 級雜訊）")
-    send_telegram_message("🤖 A 級專屬雷達已上線：僅接收可直接參考開倉之高等級突破與回踩機會")
+    print("🤖 A 級專屬極速雷達已啟動（1500萬門檻＋台灣整點自動掃描）")
+    send_telegram_message("🤖 A 級專屬雷達已升級：成交量門檻設為 1500 萬，並改為台灣整點準時掃描！")
+    
     while True:
-        try: scan_market()
-        except Exception as e: print(f"❌ 錯誤: {e}")
-        print(f"💤 {SCAN_INTERVAL} 秒後再次掃描...")
-        time.sleep(SCAN_INTERVAL)
+        try:
+            scan_market()
+        except Exception as e:
+            print(f"❌ 錯誤: {e}")
+            
+        now = datetime.now(timezone(timedelta(hours=8)))
+        seconds_to_next_hour = (60 - now.minute) * 60 - now.second
+        print(f"💤 等待至下一個整點，大約 {seconds_to_next_hour // 60} 分鐘後再次掃描...")
+        time.sleep(seconds_to_next_hour)
