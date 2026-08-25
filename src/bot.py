@@ -39,8 +39,7 @@ server_thread.start()
 # Telegram
 # =========================================================
 
-# ⚠️ 請換成新的 Telegram Bot Token
-TELEGRAM_BOT_TOKEN = "YOUR_NEW_BOT_TOKEN"
+TELEGRAM_BOT_TOKEN = "8834096490:AAGvSHCC8TNC_q4CXJZ4-fK-zyXlmHCPoKA"
 TELEGRAM_CHAT_ID = "6273931436"
 
 
@@ -80,12 +79,9 @@ VOL_VERY_STRONG = 1.60
 # OI
 # =========================================================
 
-# OI 強度
 OI_STRONG = 2.0
 OI_NORMAL = 0.5
 
-# 保存 OI 歷史
-# 每小時記錄一次
 OI_HISTORY_HOURS = 12
 
 
@@ -104,13 +100,10 @@ MOMENTUM_VOL_MEDIUM = 1.05
 # 風控
 # =========================================================
 
-# 固定 RR 1:2.5
 TARGET_RR = 2.5
 
-# 止損最大距離
 MAX_STOP_DISTANCE_PCT = 3.0
 
-# 止損太近也不要
 MIN_STOP_DISTANCE_PCT = 0.30
 
 
@@ -136,35 +129,11 @@ session.mount("http://", adapter)
 
 notified_signals = set()
 
-# =========================================================
-# OI 歷史
-#
-# symbol:
-# [
-#   {
-#       "time": timestamp,
-#       "oi": value
-#   }
-# ]
-# =========================================================
-
 oi_history = defaultdict(
     lambda: deque(maxlen=OI_HISTORY_HOURS + 5)
 )
 
-
-# =========================================================
-# 已經出現 A級的幣
-# 持續追蹤後續動能
-# =========================================================
-
 tracked_symbols = {}
-
-
-# =========================================================
-# 動能目前狀態
-# symbol -> 強 / 中 / 弱
-# =========================================================
 
 momentum_states = {}
 
@@ -988,7 +957,7 @@ def send_momentum_change(
 
 
 # =========================================================
-# 更新已追蹤幣的動能（已加入動能轉弱自動解除追蹤）
+# 更新已追蹤幣的動能（動能轉弱自動解除追蹤）
 # =========================================================
 
 def update_momentum_tracking():
@@ -1789,3 +1758,4 @@ if __name__ == "__main__":
         time.sleep(
             seconds_to_next_hour
         )
+
