@@ -499,51 +499,52 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 漲幅榜前 30 名 ＋ 交易量 1500 萬以上 (Bybit Tickers)
+# 漲幅榜前 30 名 ＋ 交易量 1500 萬以上 (升級防封鎖版)
 # =========================================================
 
 def get_top_hot_symbols():
+    url = f"{BYBIT_BASE_URL}/v5/market/tickers"
+    params = {"category": "linear"}
+    
+    custom_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bybit.com/"
+    }
 
-    tickers = bybit_get(
-        "/v5/market/tickers",
-        {
-            "category": "linear"
-        }
-    )
+    try:
+        response = session.get(url, params=params, headers=custom_headers, timeout=10)
+        if response.status_code != 200:
+            print(f"⚠️ Bybit Tickers API 回傳狀態碼錯誤: {response.status_code}")
+            return []
+        
+        data = response.json()
+        if data.get("retCode") != 0:
+            print(f"⚠️ Bybit API 錯誤代碼: {data.get('retMsg')}")
+            return []
+            
+        tickers = data.get("result", {}).get("list", [])
+    except Exception as e:
+        print(f"⚠️ 取得 Tickers 發生例外錯誤: {e}")
+        return []
 
     if not tickers:
         return []
 
     exclude = [
-        "SPX",
-        "NDX",
-        "QQQ",
-        "AAPL",
-        "TSLA",
-        "NVDA",
-        "GOLD",
-        "OIL"
+        "SPX", "NDX", "QQQ", "AAPL", "TSLA", "NVDA", "GOLD", "OIL"
     ]
 
     symbol_data = []
 
     for item in tickers:
-
         symbol = item.get("symbol")
-
-        if not symbol:
+        if not symbol or not symbol.endswith("USDT"):
             continue
-
-        if not symbol.endswith("USDT"):
-            continue
-
         if any(x in symbol for x in exclude):
             continue
 
         try:
-
             turnover_24h = float(item.get("turnover24h", 0))
-
             if turnover_24h < MIN_24H_VOLUME:
                 continue
 
@@ -554,7 +555,6 @@ def get_top_hot_symbols():
                 "turnover": turnover_24h,
                 "change": price_change_pcnt
             })
-
         except Exception:
             continue
 
