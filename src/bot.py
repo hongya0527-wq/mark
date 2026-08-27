@@ -16,7 +16,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Feidudu Zuoweimon Bot is running!")
+        self.wfile.write(b"Feidudu Zuoweimon Bybit Bot is running!")
 
     def log_message(self, format, *args):
         return
@@ -44,10 +44,10 @@ TELEGRAM_CHAT_ID = "6273931436"
 
 
 # =========================================================
-# OKX
+# Bybit V5 API
 # =========================================================
 
-OKX_BASE_URL = "https://www.okx.com"
+BYBIT_BASE_URL = "https://api.bybit.com"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -139,12 +139,12 @@ momentum_states = {}
 
 
 # =========================================================
-# OKX GET
+# Bybit GET (V5 實作)
 # =========================================================
 
-def okx_get(endpoint, params=None, retries=2):
+def bybit_get(endpoint, params=None, retries=2):
 
-    url = f"{OKX_BASE_URL}{endpoint}"
+    url = f"{BYBIT_BASE_URL}{endpoint}"
 
     for attempt in range(retries):
 
@@ -164,10 +164,10 @@ def okx_get(endpoint, params=None, retries=2):
 
             data = response.json()
 
-            if data.get("code") != "0":
+            if data.get("retCode") != 0:
                 return []
 
-            return data.get("data", [])
+            return data.get("result", {}).get("list", [])
 
         except Exception:
 
@@ -232,17 +232,24 @@ def format_price(price):
 
 
 # =========================================================
-# K線
+# K線 (Bybit V5 轉換)
 # =========================================================
 
 def get_candles(symbol, bar, limit=100):
+    interval_map = {
+        "1H": "60",
+        "4H": "240",
+        "1D": "D"
+    }
+    bybit_interval = interval_map.get(bar, "60")
 
-    data = okx_get(
-        "/api/v5/market/candles",
+    data = bybit_get(
+        "/v5/market/kline",
         {
-            "instId": symbol,
-            "bar": bar,
-            "limit": str(limit)
+            "category": "linear",
+            "symbol": symbol,
+            "interval": bybit_interval,
+            "limit": limit
         }
     )
 
@@ -255,7 +262,7 @@ def get_candles(symbol, bar, limit=100):
 
         try:
 
-            if len(item) < 9:
+            if len(item) < 7:
                 continue
 
             candles.append({
@@ -265,7 +272,7 @@ def get_candles(symbol, bar, limit=100):
                 "low": float(item[3]),
                 "close": float(item[4]),
                 "volume": float(item[5]),
-                "confirm": item[8]
+                "confirm": "1"
             })
 
         except Exception:
@@ -275,14 +282,18 @@ def get_candles(symbol, bar, limit=100):
 
 
 # =========================================================
-# Funding Rate
+# Funding Rate (Bybit V5)
 # =========================================================
 
 def get_funding_rate(symbol):
 
-    data = okx_get(
-        "/api/v5/public/funding-rate",
-        {"instId": symbol}
+    data = bybit_get(
+        "/v5/market/funding/history",
+        {
+            "category": "linear",
+            "symbol": symbol,
+            "limit": 1
+        }
     )
 
     if not data:
@@ -301,15 +312,15 @@ def get_funding_rate(symbol):
 
 
 # =========================================================
-# 一次取得全市場 OI
+# 一次取得全市場 OI (Bybit V5)
 # =========================================================
 
 def get_all_open_interest():
 
-    data = okx_get(
-        "/api/v5/public/open-interest",
+    data = bybit_get(
+        "/v5/market/tickers",
         {
-            "instType": "SWAP"
+            "category": "linear"
         }
     )
 
@@ -319,17 +330,17 @@ def get_all_open_interest():
 
         try:
 
-            symbol = item.get("instId")
+            symbol = item.get("symbol")
 
             if not symbol:
                 continue
 
-            if not symbol.endswith("-USDT-SWAP"):
+            if not symbol.endswith("USDT"):
                 continue
 
             oi = float(
                 item.get(
-                    "oi",
+                    "openInterest",
                     0
                 )
             )
@@ -446,26 +457,17 @@ def oi_status(oi_change):
 def check_btc_market_regime():
 
     candles = get_candles(
-        "BTC-USDT-SWAP",
+        "BTCUSDT",
         "4H",
         50
     )
 
-    if not candles:
-        return "neutral"
-
-    closed = [
-        c
-        for c in candles
-        if c["confirm"] == "1"
-    ]
-
-    if len(closed) < 25:
+    if not candles or len(candles) < 25:
         return "neutral"
 
     closes = [
         c["close"]
-        for c in closed
+        for c in candles
     ]
 
     ema = sum(
@@ -492,15 +494,15 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 熱門幣
+# 漲幅榜前 30 名 ＋ 交易量 1500 萬以上 (Bybit Tickers)
 # =========================================================
 
 def get_top_hot_symbols():
 
-    tickers = okx_get(
-        "/api/v5/market/tickers",
+    tickers = bybit_get(
+        "/v5/market/tickers",
         {
-            "instType": "SWAP"
+            "category": "linear"
         }
     )
 
@@ -518,72 +520,46 @@ def get_top_hot_symbols():
         "OIL"
     ]
 
-    volume_list = []
+    symbol_data = []
 
     for item in tickers:
 
-        symbol = item.get(
-            "instId"
-        )
+        symbol = item.get("symbol")
 
         if not symbol:
             continue
 
-        if not symbol.endswith(
-            "-USDT-SWAP"
-        ):
+        if not symbol.endswith("USDT"):
             continue
 
-        if any(
-            x in symbol
-            for x in exclude
-        ):
+        if any(x in symbol for x in exclude):
             continue
 
         try:
 
-            vol_ccy = float(
-                item.get(
-                    "volCcy24h",
-                    0
-                )
-            )
+            turnover_24h = float(item.get("turnover24h", 0))
 
-            last_price = float(
-                item.get(
-                    "last",
-                    0
-                )
-            )
-
-            usdt_volume = (
-                vol_ccy
-                * last_price
-            )
-
-            if usdt_volume < MIN_24H_VOLUME:
+            if turnover_24h < MIN_24H_VOLUME:
                 continue
 
-            volume_list.append(
-                (
-                    symbol,
-                    usdt_volume
-                )
-            )
+            price_change_pcnt = float(item.get("price24hPcnt", 0)) * 100
+
+            symbol_data.append({
+                "symbol": symbol,
+                "turnover": turnover_24h,
+                "change": price_change_pcnt
+            })
 
         except Exception:
             continue
 
-    top_volume = [
-        x[0]
-        for x in sorted(
-            volume_list,
-            key=lambda x: x[1],
-            reverse=True
-        )[:60]
-    ]
+    top_gainers = sorted(
+        symbol_data,
+        key=lambda x: x["change"],
+        reverse=True
+    )[:30]
 
-    return top_volume
+    return [x["symbol"] for x in top_gainers]
 
 
 # =========================================================
@@ -848,20 +824,11 @@ def calculate_momentum(
     candles
 ):
 
-    if not candles:
+    if not candles or len(candles) < 7:
         return None
 
-    closed = [
-        c
-        for c in candles
-        if c["confirm"] == "1"
-    ]
-
-    if len(closed) < 7:
-        return None
-
-    current = closed[-1]
-    previous = closed[-2]
+    current = candles[-1]
+    previous = candles[-2]
 
     price_change = (
         (
@@ -873,7 +840,7 @@ def calculate_momentum(
     ) * 100
 
     vol_ratio = volume_ratio(
-        closed
+        candles
     )
 
     score = 0
@@ -957,7 +924,7 @@ def send_momentum_change(
 
 
 # =========================================================
-# 更新已追蹤幣的動能（動能轉弱自動解除追蹤）
+# 更新已追蹤幣的動能
 # =========================================================
 
 def update_momentum_tracking():
@@ -994,7 +961,6 @@ def update_momentum_tracking():
                 momentum_states[symbol] = new_state
                 continue
 
-            # 🛑 如果動能變爛（變成「弱」），直接加入移除清單，不再追蹤
             if new_state == "弱":
                 remove_list.append(symbol)
                 continue
@@ -1015,7 +981,6 @@ def update_momentum_tracking():
         except Exception:
             continue
 
-    # 執行清理：把動能變爛的幣從追蹤字典中清除
     for symbol in remove_list:
         tracked_symbols.pop(symbol, None)
         momentum_states.pop(symbol, None)
@@ -1149,7 +1114,7 @@ def analyze_symbol(
         candles_1h = get_candles(
             symbol,
             "1H",
-            30
+            40
         )
 
         if (
@@ -1161,55 +1126,39 @@ def analyze_symbol(
         ):
             return None
 
-        c4 = [
-            c
-            for c in candles_4h
-            if c["confirm"] == "1"
-        ]
-
-        c1 = [
-            c
-            for c in candles_1d
-            if c["confirm"] == "1"
-        ]
-
         if (
-            len(c4) < 35
+            len(candles_4h) < 35
             or
-            len(c1) < 25
+            len(candles_1d) < 25
+            or
+            len(candles_1h) < 15
         ):
             return None
 
-        price = c4[-1]["close"]
+        price = candles_4h[-1]["close"]
 
         resistance_4h = get_resistance(
-            c4,
+            candles_4h,
             30
         )
 
         resistance_1d = get_resistance(
-            c1,
+            candles_1d,
             20
         )
 
         if not resistance_4h:
             return None
 
-        hl_4h = higher_lows(c4)
-        hl_1d = higher_lows(c1)
+        hl_4h = higher_lows(candles_4h)
+        hl_1d = higher_lows(candles_1d)
 
-        engulf_4h = bullish_engulfing(
-            c4,
-            4
-        )
+        engulf_1h = bullish_engulfing(candles_1h, 4)
+        engulf_4h = bullish_engulfing(candles_4h, 4)
+        engulf_1d = bullish_engulfing(candles_1d, 4)
 
-        engulf_1d = bullish_engulfing(
-            c1,
-            4
-        )
-
-        vol_ratio_val = volume_ratio(
-            c4
+        vol_ratio_1h = volume_ratio(
+            candles_1h
         )
 
         oi_change = get_4h_oi_change(
@@ -1217,17 +1166,12 @@ def analyze_symbol(
         )
 
         status_4h = breakout_status(
-            c4,
+            candles_4h,
             resistance_4h
         )
 
-        status_1d = breakout_status(
-            c1,
-            resistance_1d
-        )
-
         retest = retest_confirmation(
-            c4,
+            candles_4h,
             resistance_4h
         )
 
@@ -1239,7 +1183,7 @@ def analyze_symbol(
             ]
             and
             bad_breakout(
-                c4[-1],
+                candles_4h[-1],
                 resistance_4h
             )
         ):
@@ -1264,60 +1208,31 @@ def analyze_symbol(
         if hl_1d:
             score += 1
 
+        if engulf_1h:
+            score += 2
+
         if engulf_4h:
             score += 1
 
         if engulf_1d:
-            score += 1
-
-        if status_4h == "breakout":
             score += 2
 
-        elif status_4h == "weak_breakout":
+        if status_4h in ["breakout", "near"]:
             score += 1
 
-        elif status_4h == "near":
-            score += 1
-
-        if status_1d == "breakout":
-            score += 1
-
-        elif status_1d == "near":
-            score += 1
-
-        if (
-            vol_ratio_val
-            >= VOL_VERY_STRONG
-        ):
+        if vol_ratio_1h >= VOL_STRONG:
             score += 2
 
-        elif (
-            vol_ratio_val
-            >= VOL_STRONG
-        ):
+        elif vol_ratio_1h >= VOL_NORMAL:
             score += 1
 
-        elif (
-            vol_ratio_val
-            >= VOL_NORMAL
-        ):
+        if oi_change is not None and oi_change >= OI_NORMAL:
             score += 1
-
-        if oi_change is not None:
-
-            if (
-                oi_change
-                >= OI_STRONG
-            ):
-                score += 2
-
-            elif (
-                oi_change
-                >= OI_NORMAL
-            ):
-                score += 1
 
         if momentum_state == "強":
+            score += 2
+
+        elif momentum_state == "中":
             score += 1
 
         if btc_regime == "bull":
@@ -1325,13 +1240,6 @@ def analyze_symbol(
 
         elif btc_regime == "bear":
             score -= 1
-
-        if (
-            -0.01
-            <= funding * 100
-            <= 0.05
-        ):
-            score += 1
 
         if retest:
             score += 2
@@ -1341,41 +1249,30 @@ def analyze_symbol(
             min(score, 10)
         )
 
-        is_a_grade_retest = (
-            retest
-            and
-            momentum_state != "弱"
-        )
-
-        is_a_grade_breakout = (
-            status_4h == "breakout"
-            and
-            vol_ratio_val >= 1.20
-            and
-            momentum_state != "弱"
-            and
-            (
-                oi_change is None
-                or
-                oi_change >= 0
-            )
-        )
-
-        if not (
-            is_a_grade_retest
+        is_valid_setup = (
+            engulf_1h
             or
-            is_a_grade_breakout
-        ):
-            return None
+            engulf_4h
+            or
+            engulf_1d
+            or
+            retest
+            or
+            (
+                status_4h == "breakout"
+                and
+                vol_ratio_1h >= 1.20
+            )
+        ) and momentum_state != "弱" and score >= 7
 
-        if score < 7:
+        if not is_valid_setup:
             return None
 
         stop = calculate_stop_loss(
-            c4,
+            candles_4h,
             price,
             resistance_4h,
-            is_a_grade_retest
+            retest
         )
 
         if stop is None:
@@ -1389,17 +1286,12 @@ def analyze_symbol(
         if target is None:
             return None
 
-        if is_a_grade_retest:
-
-            signal_type = (
-                "🔥 A級｜回踩確認"
-            )
-
+        if engulf_1d:
+            signal_type = "🔥 A級｜日線級別陽包陰突擊"
+        elif engulf_1h:
+            signal_type = "🔥 A級｜1H陽包陰突擊"
         else:
-
-            signal_type = (
-                "🚀 A級｜突破確認"
-            )
+            signal_type = "🚀 A級｜4H趨勢突破"
 
         if oi_change is None:
 
@@ -1416,30 +1308,16 @@ def analyze_symbol(
 
         pattern_list = []
 
-        if hl_4h:
-            pattern_list.append(
-                "4H底底高"
-            )
-
-        if hl_1d:
-            pattern_list.append(
-                "1D底底高"
-            )
-
-        if engulf_4h:
-            pattern_list.append(
-                "4H陽包陰"
-            )
-
         if engulf_1d:
-            pattern_list.append(
-                "1D陽包陰"
-            )
-
+            pattern_list.append("日線陽包陰")
+        if engulf_1h:
+            pattern_list.append("1H陽包陰")
+        if engulf_4h:
+            pattern_list.append("4H陽包陰")
+        if hl_4h:
+            pattern_list.append("4H底底高")
         if retest:
-            pattern_list.append(
-                "回踩不破"
-            )
+            pattern_list.append("回踩不破")
 
         pattern = (
             "＋".join(
@@ -1452,7 +1330,7 @@ def analyze_symbol(
 
         signal_id = (
             f"{symbol}_"
-            f"{c4[-1]['timestamp']}_"
+            f"{candles_4h[-1]['timestamp']}_"
             f"{signal_type}"
         )
 
@@ -1470,7 +1348,7 @@ def analyze_symbol(
 
             "signal_type": signal_type,
 
-            "vol_ratio": vol_ratio_val,
+            "vol_ratio": vol_ratio_1h,
 
             "oi_change": oi_change,
 
@@ -1503,7 +1381,7 @@ def build_message(r):
 
         f"⚡ 動能：`{r['momentum']}`\n"
 
-        f"📈 量：`{r['vol_ratio']:.1f}x`"
+        f"📈 1H量：`{r['vol_ratio']:.1f}x`"
         f"｜{r['oi_text']}\n"
 
         f"🕯 {r['pattern']}\n"
@@ -1541,7 +1419,7 @@ def add_to_tracking(result):
 
 
 # =========================================================
-# 清理追蹤 (最長保底 48 小時)
+# 清理追蹤
 # =========================================================
 
 def cleanup_tracking():
@@ -1596,7 +1474,7 @@ def scan_market():
 
     print(
         f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] "
-        f"⚡ 肥嘟嘟左衛門高速掃描中..."
+        f"⚡ 肥嘟嘟左衛門 Bybit 高速掃描中..."
     )
 
     print(
@@ -1618,6 +1496,7 @@ def scan_market():
     )
 
     if not symbols:
+        print("⚠️ 未能取得 Bybit 漲幅榜熱門幣種清單。")
         return
 
     found = 0
@@ -1718,11 +1597,11 @@ def scan_market():
 if __name__ == "__main__":
 
     print(
-        "🤖 肥嘟嘟左衛門已啟動"
+        "🤖 肥嘟嘟左衛門 (Bybit版) 已啟動"
     )
 
     send_telegram_message(
-        "🤖 肥嘟嘟左衛門已上線"
+        "🤖 肥嘟嘟左衛門 (漲幅榜前30 + 多周期陽包陰) 已上線"
     )
 
     while True:
@@ -1758,4 +1637,3 @@ if __name__ == "__main__":
         time.sleep(
             seconds_to_next_hour
         )
-
