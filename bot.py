@@ -20,12 +20,15 @@ TELEGRAM_CHAT_ID = "6273931436"
 
 
 # =========================================================
-# 幣安期貨 API (改用備用網域防限流)
+# 幣安期貨 API (改回主網域，並加強防護)
 # =========================================================
 
-BINANCE_BASE_URL = "https://fapi.binance.vision"
+BINANCE_BASE_URL = "https://fapi.binance.com"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.binance.com/"
 }
 
 
@@ -496,7 +499,7 @@ def get_top_hot_symbols():
         except Exception as e:
             print(f"⚠️ 抓取幣安漲幅榜例外 (嘗試 {attempt+1}/3): {e}")
         
-        time.sleep(3)
+        time.sleep(5)
 
     print("❌ 無法取得 30 檔漲幅榜（可能遭幣安限流）")
     return []
