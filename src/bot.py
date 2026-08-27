@@ -21,7 +21,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Feidudu Zuoweimon Bybit Bot is running!")
+        self.wfile.write(b"Feidudu Zuoweimon Binance Bot is running!")
 
     def log_message(self, format, *args):
         return
@@ -49,10 +49,10 @@ TELEGRAM_CHAT_ID = "6273931436"
 
 
 # =========================================================
-# Bybit V5 API
+# 幣安期貨 API (Binance USD-M Futures)
 # =========================================================
 
-BYBIT_BASE_URL = "https://api.bybit.com"
+BINANCE_BASE_URL = "https://fapi.binance.com"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -61,8 +61,6 @@ HEADERS = {
 # =========================================================
 # 篩選設定
 # =========================================================
-
-MIN_24H_VOLUME = 15_000_000
 
 MAX_ALLOWABLE_FR = 0.0015
 
@@ -144,12 +142,12 @@ momentum_states = {}
 
 
 # =========================================================
-# Bybit GET (V5 實作)
+# 幣安 GET 請求
 # =========================================================
 
-def bybit_get(endpoint, params=None, retries=2):
+def binance_get(endpoint, params=None, retries=2):
 
-    url = f"{BYBIT_BASE_URL}{endpoint}"
+    url = f"{BINANCE_BASE_URL}{endpoint}"
 
     for attempt in range(retries):
 
@@ -167,19 +165,14 @@ def bybit_get(endpoint, params=None, retries=2):
 
             response.raise_for_status()
 
-            data = response.json()
-
-            if data.get("retCode") != 0:
-                return []
-
-            return data.get("result", {}).get("list", [])
+            return response.json()
 
         except Exception:
 
             if attempt < retries - 1:
                 time.sleep(0.5)
 
-    return []
+    return None
 
 
 # =========================================================
@@ -237,37 +230,36 @@ def format_price(price):
 
 
 # =========================================================
-# K線 (Bybit V5 轉換)
+# K線 (幣安轉換)
 # =========================================================
 
 def get_candles(symbol, bar, limit=100):
     interval_map = {
-        "1H": "60",
-        "4H": "240",
-        "1D": "D"
+        "1H": "1h",
+        "4H": "4h",
+        "1D": "1d"
     }
-    bybit_interval = interval_map.get(bar, "60")
+    binance_interval = interval_map.get(bar, "1h")
 
-    data = bybit_get(
-        "/v5/market/kline",
+    data = binance_get(
+        "/fapi/v1/klines",
         {
-            "category": "linear",
             "symbol": symbol,
-            "interval": bybit_interval,
+            "interval": binance_interval,
             "limit": limit
         }
     )
 
-    if not data:
+    if not data or not isinstance(data, list):
         return None
 
     candles = []
 
-    for item in reversed(data):
+    for item in data:
 
         try:
 
-            if len(item) < 7:
+            if len(item) < 6:
                 continue
 
             candles.append({
@@ -287,17 +279,15 @@ def get_candles(symbol, bar, limit=100):
 
 
 # =========================================================
-# Funding Rate (Bybit V5)
+# Funding Rate (幣安)
 # =========================================================
 
 def get_funding_rate(symbol):
 
-    data = bybit_get(
-        "/v5/market/funding/history",
+    data = binance_get(
+        "/fapi/v1/premiumIndex",
         {
-            "category": "linear",
-            "symbol": symbol,
-            "limit": 1
+            "symbol": symbol
         }
     )
 
@@ -306,8 +296,8 @@ def get_funding_rate(symbol):
 
     try:
         return float(
-            data[0].get(
-                "fundingRate",
+            data.get(
+                "lastFundingRate",
                 0
             )
         )
@@ -317,19 +307,19 @@ def get_funding_rate(symbol):
 
 
 # =========================================================
-# 一次取得全市場 OI (Bybit V5)
+# 一次取得全市場 OI (幣安)
 # =========================================================
 
 def get_all_open_interest():
 
-    data = bybit_get(
-        "/v5/market/tickers",
-        {
-            "category": "linear"
-        }
+    data = binance_get(
+        "/fapi/v1/openInterest"
     )
 
     result = {}
+
+    if not data or not isinstance(data, list):
+        return result
 
     for item in data:
 
@@ -337,10 +327,7 @@ def get_all_open_interest():
 
             symbol = item.get("symbol")
 
-            if not symbol:
-                continue
-
-            if not symbol.endswith("USDT"):
+            if not symbol or not symbol.endswith("USDT"):
                 continue
 
             oi = float(
@@ -499,53 +486,50 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 取得所有 USDT 永續合約清單 (改用 instruments-info 避開 403)
+# 結合核心主流 + 幣安 24H 漲幅榜清單
 # =========================================================
 
 def get_top_hot_symbols():
-    url = f"{BYBIT_BASE_URL}/v5/market/instruments-info"
-    params = {"category": "linear"}
+    core_symbols = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", 
+        "SUIUSDT", "RENDERUSDT", "FETUSDT", "PEPEUSDT", "NEARUSDT"
+    ]
     
-    custom_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json"
-    }
+    url = f"{BINANCE_BASE_URL}/fapi/v1/ticker/24hr"
+    dynamic_symbols = []
 
     try:
-        response = session.get(url, params=params, headers=custom_headers, timeout=10)
-        if response.status_code != 200:
-            print(f"⚠️ Bybit Instruments API 回傳狀態碼錯誤: {response.status_code}")
-            return []
-        
-        data = response.json()
-        if data.get("retCode") != 0:
-            print(f"⚠️ Bybit API 錯誤代碼: {data.get('retMsg')}")
-            return []
+        response = session.get(url, timeout=10)
+        if response.status_code == 200:
+            tickers = response.json()
+            exclude = ["BUSD", "USDC", "UP", "DOWN"]
+            valid_tickers = []
             
-        instruments = data.get("result", {}).get("list", [])
+            for item in tickers:
+                symbol = item.get("symbol")
+                if not symbol or not symbol.endswith("USDT"):
+                    continue
+                if any(x in symbol for x in exclude):
+                    continue
+                
+                try:
+                    change_rate = float(item.get("priceChangePercent", 0))
+                    quote_volume = float(item.get("quoteVolume", 0)) # 24小時成交額 (USDT)
+                    
+                    if quote_volume >= 5_000_000:
+                        valid_tickers.append((symbol, change_rate))
+                except:
+                    continue
+            
+            # 依 24H 漲幅排序，取前 35 名強勢幣
+            valid_tickers.sort(key=lambda x: x[1], reverse=True)
+            dynamic_symbols = [item[0] for item in valid_tickers[:35]]
     except Exception as e:
-        print(f"⚠️ 取得 Instruments 發生例外錯誤: {e}")
-        return []
+        print(f"⚠️ 抓取幣安漲幅榜例外: {e}")
 
-    if not instruments:
-        return []
-
-    exclude = ["SPX", "NDX", "QQQ", "AAPL", "TSLA", "NVDA", "GOLD", "OIL"]
-    symbols = []
-
-    for item in instruments:
-        symbol = item.get("symbol")
-        if not symbol or not symbol.endswith("USDT"):
-            continue
-        if any(x in symbol for x in exclude):
-            continue
-        if item.get("status") != "Trading":
-            continue
-            
-        symbols.append(symbol)
-
-    print(f"✅ 成功載入合約清單，共 {len(symbols)} 檔幣種，開始深度掃描...")
-    return symbols
+    combined_symbols = list(set(core_symbols + dynamic_symbols))
+    print(f"🔥 幣安清單載入成功：核心主流 ＋ 漲幅榜熱門幣，共計 {len(combined_symbols)} 檔幣種進行掃描...")
+    return combined_symbols
 
 
 # =========================================================
@@ -1460,7 +1444,7 @@ def scan_market():
 
     print(
         f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] "
-        f"⚡ 肥嘟嘟左衛門 Bybit 高速掃描中..."
+        f"⚡ 肥嘟嘟左衛門 Binance 高速掃描中..."
     )
 
     print(
@@ -1482,7 +1466,7 @@ def scan_market():
     )
 
     if not symbols:
-        print("⚠️ 未能取得 Bybit 合約清單。")
+        print("⚠️ 未能取得幣安合約清單。")
         return
 
     found = 0
@@ -1583,11 +1567,11 @@ def scan_market():
 if __name__ == "__main__":
 
     print(
-        "🤖 肥嘟嘟左衛門 (Bybit版) 已啟動"
+        "🤖 肥嘟嘟左衛門 (幣安合約版) 已啟動"
     )
 
     send_telegram_message(
-        "🤖 肥嘟嘟左衛門 (全市場合約 + 多周期陽包陰) 已上線"
+        "🤖 肥嘟嘟左衛門 (幣安合約 + 漲幅榜 + 多周期陽包陰) 已上線"
     )
 
     while True:
