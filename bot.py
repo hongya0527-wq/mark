@@ -457,12 +457,11 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 幣安 24H 滾動漲幅榜前 30 名（成交額 >= 1500萬美金）
+# 幣安 24H 滾動漲幅榜前 30 名（嚴格版：絕不保底）
 # =========================================================
 
 def get_top_hot_symbols():
     url = f"{BINANCE_BASE_URL}/fapi/v1/ticker/24hr"
-    valid_tickers = []
 
     for attempt in range(3):
         try:
@@ -470,6 +469,7 @@ def get_top_hot_symbols():
             if response.status_code == 200:
                 tickers = response.json()
                 exclude = ["BUSD", "USDC", "UP", "DOWN"]
+                valid_tickers = []
                 
                 for item in tickers:
                     symbol = item.get("symbol")
@@ -496,11 +496,10 @@ def get_top_hot_symbols():
         except Exception as e:
             print(f"⚠️ 抓取幣安漲幅榜例外 (嘗試 {attempt+1}/3): {e}")
         
-        time.sleep(1)
+        time.sleep(2)
 
-    fallback = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"]
-    print(f"⚠️ 啟用預設保底清單，共 {len(fallback)} 檔...")
-    return fallback
+    print("❌ 無法取得 30 檔漲幅榜（可能遭幣安限流）")
+    return []
 
 
 # =========================================================
@@ -1234,6 +1233,14 @@ def scan_market():
         f"⚡ 肥嘟嘟左衛門高速掃描中..."
     )
 
+    symbols = (
+        get_top_hot_symbols()
+    )
+
+    if not symbols:
+        print("❌ 未能取得 30 檔漲幅榜清單，本次掃描中止。")
+        return
+
     print(
         "📊 更新全市場 OI..."
     )
@@ -1247,14 +1254,6 @@ def scan_market():
     print(
         f"₿ BTC環境：{btc_regime}"
     )
-
-    symbols = (
-        get_top_hot_symbols()
-    )
-
-    if not symbols:
-        print("⚠️ 未能取得幣安合約清單。")
-        return
 
     found = 0
     sent = 0
