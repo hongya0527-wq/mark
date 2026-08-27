@@ -499,22 +499,22 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 漲幅榜前 30 名 ＋ 交易量 1500 萬以上 (升級防封鎖版)
+# 取得所有 USDT 永續合約清單 (改用 instruments-info 避開 403)
 # =========================================================
 
 def get_top_hot_symbols():
-    url = f"{BYBIT_BASE_URL}/v5/market/tickers"
+    url = f"{BYBIT_BASE_URL}/v5/market/instruments-info"
     params = {"category": "linear"}
     
     custom_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.bybit.com/"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json"
     }
 
     try:
         response = session.get(url, params=params, headers=custom_headers, timeout=10)
         if response.status_code != 200:
-            print(f"⚠️ Bybit Tickers API 回傳狀態碼錯誤: {response.status_code}")
+            print(f"⚠️ Bybit Instruments API 回傳狀態碼錯誤: {response.status_code}")
             return []
         
         data = response.json()
@@ -522,49 +522,30 @@ def get_top_hot_symbols():
             print(f"⚠️ Bybit API 錯誤代碼: {data.get('retMsg')}")
             return []
             
-        tickers = data.get("result", {}).get("list", [])
+        instruments = data.get("result", {}).get("list", [])
     except Exception as e:
-        print(f"⚠️ 取得 Tickers 發生例外錯誤: {e}")
+        print(f"⚠️ 取得 Instruments 發生例外錯誤: {e}")
         return []
 
-    if not tickers:
+    if not instruments:
         return []
 
-    exclude = [
-        "SPX", "NDX", "QQQ", "AAPL", "TSLA", "NVDA", "GOLD", "OIL"
-    ]
+    exclude = ["SPX", "NDX", "QQQ", "AAPL", "TSLA", "NVDA", "GOLD", "OIL"]
+    symbols = []
 
-    symbol_data = []
-
-    for item in tickers:
+    for item in instruments:
         symbol = item.get("symbol")
         if not symbol or not symbol.endswith("USDT"):
             continue
         if any(x in symbol for x in exclude):
             continue
-
-        try:
-            turnover_24h = float(item.get("turnover24h", 0))
-            if turnover_24h < MIN_24H_VOLUME:
-                continue
-
-            price_change_pcnt = float(item.get("price24hPcnt", 0)) * 100
-
-            symbol_data.append({
-                "symbol": symbol,
-                "turnover": turnover_24h,
-                "change": price_change_pcnt
-            })
-        except Exception:
+        if item.get("status") != "Trading":
             continue
+            
+        symbols.append(symbol)
 
-    top_gainers = sorted(
-        symbol_data,
-        key=lambda x: x["change"],
-        reverse=True
-    )[:30]
-
-    return [x["symbol"] for x in top_gainers]
+    print(f"✅ 成功載入合約清單，共 {len(symbols)} 檔幣種，開始深度掃描...")
+    return symbols
 
 
 # =========================================================
@@ -1501,7 +1482,7 @@ def scan_market():
     )
 
     if not symbols:
-        print("⚠️ 未能取得 Bybit 漲幅榜熱門幣種清單。")
+        print("⚠️ 未能取得 Bybit 合約清單。")
         return
 
     found = 0
@@ -1606,7 +1587,7 @@ if __name__ == "__main__":
     )
 
     send_telegram_message(
-        "🤖 肥嘟嘟左衛門 (漲幅榜前30 + 多周期陽包陰) 已上線"
+        "🤖 肥嘟嘟左衛門 (全市場合約 + 多周期陽包陰) 已上線"
     )
 
     while True:
