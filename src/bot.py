@@ -486,13 +486,12 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 結合核心主流 + 幣安 24H 漲幅榜清單
+# 核心主流 ＋ 幣安漲幅榜前30名（成交額 >= 1500萬美金）
 # =========================================================
 
 def get_top_hot_symbols():
     core_symbols = [
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", 
-        "SUIUSDT", "RENDERUSDT", "FETUSDT", "PEPEUSDT", "NEARUSDT"
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"
     ]
     
     url = f"{BINANCE_BASE_URL}/fapi/v1/ticker/24hr"
@@ -516,19 +515,25 @@ def get_top_hot_symbols():
                     change_rate = float(item.get("priceChangePercent", 0))
                     quote_volume = float(item.get("quoteVolume", 0)) # 24小時成交額 (USDT)
                     
-                    if quote_volume >= 5_000_000:
+                    # 篩選：24小時成交額大於等於 1,500 萬美金
+                    if quote_volume >= 15_000_000:
                         valid_tickers.append((symbol, change_rate))
                 except:
                     continue
             
-            # 依 24H 漲幅排序，取前 35 名強勢幣
+            # 依 24H 漲幅由大到小排序（真正抓取漲幅榜）
             valid_tickers.sort(key=lambda x: x[1], reverse=True)
-            dynamic_symbols = [item[0] for item in valid_tickers[:35]]
+            
+            # 嚴格取漲幅榜前 30 名
+            dynamic_symbols = [item[0] for item in valid_tickers[:30]]
+            print(f"📈 成功過濾成交額 >= 1500萬美金，抓取漲幅榜前 {len(dynamic_symbols)} 強勢幣種")
+            
     except Exception as e:
         print(f"⚠️ 抓取幣安漲幅榜例外: {e}")
 
+    # 合併核心主流與漲幅榜 30 名，去重複
     combined_symbols = list(set(core_symbols + dynamic_symbols))
-    print(f"🔥 幣安清單載入成功：核心主流 ＋ 漲幅榜熱門幣，共計 {len(combined_symbols)} 檔幣種進行掃描...")
+    print(f"🔥 幣安清單載入成功：核心主流 ＋ 漲幅榜前30名，總計 {len(combined_symbols)} 檔幣種進行掃描...")
     return combined_symbols
 
 
