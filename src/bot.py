@@ -1,4 +1,9 @@
+import sys
 import os
+
+# 💡 強制讓 Python 輸出即時顯示在 Render Logs 上，不會被卡住
+sys.stdout.reconfigure(line_buffering=True)
+
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import time
