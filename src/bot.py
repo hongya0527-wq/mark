@@ -486,23 +486,18 @@ def check_btc_market_regime():
 
 
 # =========================================================
-# 核心主流 ＋ 幣安漲幅榜前30名（成交額 >= 1500萬美金）
+# 幣安 24H 滾動漲幅榜前 30 名（成交額 >= 1500萬美金）
 # =========================================================
 
 def get_top_hot_symbols():
-    core_symbols = [
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"
-    ]
-    
     url = f"{BINANCE_BASE_URL}/fapi/v1/ticker/24hr"
-    dynamic_symbols = []
+    valid_tickers = []
 
     try:
         response = session.get(url, timeout=10)
         if response.status_code == 200:
             tickers = response.json()
             exclude = ["BUSD", "USDC", "UP", "DOWN"]
-            valid_tickers = []
             
             for item in tickers:
                 symbol = item.get("symbol")
@@ -513,28 +508,29 @@ def get_top_hot_symbols():
                 
                 try:
                     change_rate = float(item.get("priceChangePercent", 0))
-                    quote_volume = float(item.get("quoteVolume", 0)) # 24小時成交額 (USDT)
+                    quote_volume = float(item.get("quoteVolume", 0)) # 過去24小時滾動成交額 (USDT)
                     
-                    # 篩選：24小時成交額大於等於 1,500 萬美金
                     if quote_volume >= 15_000_000:
                         valid_tickers.append((symbol, change_rate))
                 except:
                     continue
             
-            # 依 24H 漲幅由大到小排序（真正抓取漲幅榜）
+            # 依過去 24H 漲幅由大到小排序
             valid_tickers.sort(key=lambda x: x[1], reverse=True)
             
-            # 嚴格取漲幅榜前 30 名
+            # 取前 30 名
             dynamic_symbols = [item[0] for item in valid_tickers[:30]]
-            print(f"📈 成功過濾成交額 >= 1500萬美金，抓取漲幅榜前 {len(dynamic_symbols)} 強勢幣種")
             
+            if len(dynamic_symbols) > 0:
+                print(f"🔥 肥嘟嘟左衛門成功抓取漲幅榜，成交額 >= 1500萬美金，共計 {len(dynamic_symbols)} 檔強勢幣種")
+                return dynamic_symbols
+
     except Exception as e:
         print(f"⚠️ 抓取幣安漲幅榜例外: {e}")
 
-    # 合併核心主流與漲幅榜 30 名，去重複
-    combined_symbols = list(set(core_symbols + dynamic_symbols))
-    print(f"🔥 幣安清單載入成功：核心主流 ＋ 漲幅榜前30名，總計 {len(combined_symbols)} 檔幣種進行掃描...")
-    return combined_symbols
+    fallback = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"]
+    print(f"⚠️ 啟用預設保底清單，共 {len(fallback)} 檔...")
+    return fallback
 
 
 # =========================================================
@@ -1449,7 +1445,7 @@ def scan_market():
 
     print(
         f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] "
-        f"⚡ 肥嘟嘟左衛門 Binance 高速掃描中..."
+        f"⚡ 肥嘟嘟左衛門高速掃描中..."
     )
 
     print(
@@ -1572,7 +1568,7 @@ def scan_market():
 if __name__ == "__main__":
 
     print(
-        "🤖 肥嘟嘟左衛門 (幣安合約版) 已啟動"
+        "🤖 肥嘟嘟左衛門已啟動"
     )
 
     send_telegram_message(
@@ -1603,7 +1599,7 @@ if __name__ == "__main__":
         )
 
         print(
-            f"💤 等待至下一個整點，"
+            f"💤 等待至下一個台灣整點，"
             f"大約 "
             f"{seconds_to_next_hour // 60} "
             f"分鐘後再次掃描..."
