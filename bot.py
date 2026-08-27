@@ -20,10 +20,10 @@ TELEGRAM_CHAT_ID = "6273931436"
 
 
 # =========================================================
-# 幣安期貨 API (Binance USD-M Futures)
+# 幣安期貨 API (改用備用網域防限流)
 # =========================================================
 
-BINANCE_BASE_URL = "https://fapi.binance.com"
+BINANCE_BASE_URL = "https://fapi.binance.vision"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -496,7 +496,7 @@ def get_top_hot_symbols():
         except Exception as e:
             print(f"⚠️ 抓取幣安漲幅榜例外 (嘗試 {attempt+1}/3): {e}")
         
-        time.sleep(2)
+        time.sleep(3)
 
     print("❌ 無法取得 30 檔漲幅榜（可能遭幣安限流）")
     return []
